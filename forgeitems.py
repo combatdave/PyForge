@@ -1,10 +1,15 @@
 from forgecards import *
+from forgeworld import *
 
-class MagicItem_Base:
+
+class WorldItem:
 	name = None
 
-	def Use(self, forgedItem):
-		pass
+	def __init__(self, world):
+		self.world = world
+
+	def Use(self):
+		raise Exception("Unimplemented")
 
 	def __repr__(self):
 		if self.name is not None:
@@ -13,27 +18,40 @@ class MagicItem_Base:
 			return self.__class__.__name__
 
 
-class MagicItem_LightCoin(MagicItem_Base):
-	name = "Light Coin"
-
-
+class MagicItem(WorldItem):
 	def Use(self, forgedItem):
-		forgedItem.AddEnergy(8, self, "ItemUse")
-		forgedItem.PushCard(Card_LightWisp())
+		raise Exception("Unimplemented")
 
 
-class MagicItem_ShadeCoin(MagicItem_Base):
-	name = "Shade Coin"
-
-
-	def Use(self, forgedItem):
-		forgedItem.AddEnergy(8, self, "ItemUse")
-		forgedItem.PushCard(Card_ShadeWisp())
-
-
-class MagicItem_Glowstone(MagicItem_Base):
+class MI_Glowstone(MagicItem):
 	name = "Glowstone"
 
+	def Use(self, forgedItem):
+		forgedItem.PushCard(Card_Nymph)
+
+
+class MI_Sparkstone(MagicItem):
+	name = "Sparkstone"
 
 	def Use(self, forgedItem):
-		forgedItem.PushCard(Card_Nymph())
+		forgedItem.PushLastToLoop()
+		forgedItem.PushCard(Card_CracklingSpark)
+
+
+class MI_FocusCrystal(MagicItem):
+	name = "Focus Crystal"
+
+	def Use(self, forgedItem):
+		forgedItem.AddEnergy(8, self, "ItemUse")
+		time = self.world.GetTime()
+		if time == World.Day:
+			forgedItem.PushCard(Card_LightWisp)
+		elif time == World.Night:
+			forgedItem.PushCard(Card_ShadeWisp)
+
+
+class WI_Clock(WorldItem):
+	name = "Clock"
+
+	def Use(self):
+		self.world.IncreaseTime()

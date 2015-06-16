@@ -1,6 +1,7 @@
 from forgecards import *
 from forgeitems import *
 from forgeessences import *
+from forgeworld import *
 
 
 class Material:
@@ -8,21 +9,16 @@ class Material:
 		self.name = name
 		self.resistances = {}
 
-
 	def __repr__(self):
 		return self.name
 
 
 class ForgedItem:
-	def __init__(self, name, material, sequence=None):
+	def __init__(self, world, name, material, sequence=None):
+		self.world = world
 		self.name = name
 
-		self.essences = {}
-		self.essences[EssenceType.Light] = Essence_Consumer(EssenceType.Light, self)
-		self.essences[EssenceType.Shade] = Essence_Consumer(EssenceType.Shade, self)
-
-		self.essences[EssenceType.Light].SetConsumableEssence(self.essences[EssenceType.Shade])
-		self.essences[EssenceType.Shade].SetConsumableEssence(self.essences[EssenceType.Light])
+		self.essences = CreateEssences(self)
 
 		self.energy = 0
 
@@ -30,8 +26,13 @@ class ForgedItem:
 		self.cards = [Card_None()] * 3
 		self.destroyedCard = Card_None()
 
+		self.loop = [None] * 3
+
 		self.material = material
+		self.temporaryResistances = {}
 		self.SetResistancesFromMaterial()
+
+		self.lastMagicItem = None
 
 		self._EvaluateSequence(sequence)
 
@@ -48,9 +49,12 @@ class ForgedItem:
 				essence.resistance = 0
 
 
-	def PushCard(self, card):
+	def PushCard(self, cardType):
 		if isinstance(self.enteringCard, Card_None):
+			card = cardType(self)
+			card.OnCreated()
 			self.enteringCard = card
+			print self.enteringCard, "was added."
 		else:
 			raise Exception("Can't push a card when one already exists: " + str(self.enteringCard))
 
@@ -66,69 +70,110 @@ class ForgedItem:
 		return None
 
 
+	def PushLastToLoop(self):
+		if not isinstance(self.cards[-1], Card_None):
+			self.loop[0] = self.cards[-1]
+			self.cards[-1] = Card_None()
+
+
+	def GetTemporaryResistance(self, essenceType):
+		if essenceType in self.temporaryResistances:
+			return self.temporaryResistances[essenceType]
+
+		return 0
+
+
+	def AddTemporaryResistance(self, essenceType, resistance):
+		if essenceType not in self.temporaryResistances:
+			self.temporaryResistances[essenceType] = 0
+
+		self.temporaryResistances[essenceType] += resistance
+
+
+	def RotateLoop(self):
+		self.loop = [self.loop[-1]] + self.loop[:-1]
+
+
 	def _EvaluateSequence(self, sequence):
-		for item in sequence:
-			print "Applying", item, "to", self
+		for itemType in sequence:
+			item = itemType(self.world)
 
-			self._ResetForTurn()
+			if isinstance(item, MagicItem):
+				self._EvaluateMagicItem(item)
+			elif isinstance(item, WorldItem):
+				self._EvaluateWorldItem(item)
 
-			self._UseItem(item)
-
-			self._PushCards()
-
-			self._ApplySpiritEssenceStrengths()
-
-			self._ApplyCardEffects()
-
-			self._ActivateCards()
-
-			self._EvaluateEssences()
-
-			print "Turn complete:"
-			self._PrintEssences()
-			self._PrintStack()
 			print ""
+
+
+	def _EvaluateMagicItem(self, item):
+		print "Applying", item, "to", self, "during", self.world.GetTime()
+
+		self._ResetForTurn()
+
+		item.Use(self)
+
+		self._PushCards()
+
+		self._ApplyTaintStrengths()
+
+		self._ApplyCardEffects()
+
+		self._ActivateCards()
+
+		self._EvaluateEssences()
+
+		print "Status:"
+		self._PrintEssences()
+		self._PrintStack()
+		self._PrintLoop()
+
+		self.lastMagicItem = item
+
+
+	def _EvaluateWorldItem(self, item):
+		print "Activating", item, "during", self.world.GetTime()
+		item.Use()
 
 
 	def _ResetForTurn(self):
 		self.energy = 0
-		self.destroyedCard = Card_None
+		self.destroyedCard = Card_None()
+		self.temporaryResistances = {}
 
 		for essence in self.essences.itervalues():
 			essence.ResetForTurn()
 
 
-	def _UseItem(self, item):
-		item.Use(self)
-
-
 	def _PushCards(self):
-		self.destroyedCard = self.cards[-1]
-		self.cards = [self.enteringCard] + self.cards[:-1]
-		self.enteringCard = Card_None()
+		if self.enteringCard is not None and not isinstance(self.enteringCard, Card_None):
+			self.destroyedCard = self.cards[-1]
+			self.cards = [self.enteringCard] + self.cards[:-1]
+			self.enteringCard = Card_None()
 
 
-	def _ApplySpiritEssenceStrengths(self):
+	def _ApplyTaintStrengths(self):
 		for card in self.cards:
-			if card.spiritEssence is not None:
-				essence = self.GetEssenceByType(card.spiritEssence)
-				essence.taint += card.spiritEssenceStrength
+			if card.taint is not None:
+				essence = self.GetEssenceByType(card.taint)
+				essence.taint += card.taintStrength
 
 
 	def _ApplyCardEffects(self):
 		for card in self.cards:
-			card.ApplyTemporaryEffects(self)
+			card.ApplyTemporaryEffects()
 
 
 	def _ActivateCards(self):
-		self.destroyedCard.ActivateDestroyed(self)
+		self.destroyedCard.ActivateDestroyed()
 		for i, card in enumerate(self.cards):
-			card.ActivateInSlot(self, i)
+			card.ActivateInSlot(i)
 
 
 	def _EvaluateEssences(self):
 		print "Improving essences with", self.energy, "energy..."
-		essenceToLevel = sorted(self.essences.values(), key=lambda essence: essence.taint, reverse=True)[0]
+		essencesByTaint = sorted(self.essences.values(), key=lambda essence: essence.taint, reverse=True)
+		essenceToLevel = essencesByTaint[0]
 		while essenceToLevel.TryToLevelUp():
 			pass
 
@@ -143,23 +188,24 @@ class ForgedItem:
 			print essence
 
 
-sequence = [
-	MagicItem_Glowstone(),
-	MagicItem_LightCoin(),
-	MagicItem_LightCoin(),
-	MagicItem_LightCoin(),
-]
+	def _PrintLoop(self):
+		print "\t\t<\t 2:", self.loop[2]
+		print "0:", self.loop[0], "\t\t^"
+		print "\t\t>\t 1:", self.loop[1]
 
 
 sequence = [
-	MagicItem_Glowstone(),
-	MagicItem_ShadeCoin(),
-	MagicItem_ShadeCoin(),
-	MagicItem_ShadeCoin(),
+	MI_Glowstone,
+	MI_FocusCrystal,
+	WI_Clock,
+	WI_Clock,
+	MI_FocusCrystal,
+	MI_FocusCrystal,
 ]
 
+world = World()
 
 wood = Material("Wood")
 wood.resistances[EssenceType.Shade] = 10
 
-i = ForgedItem("Sword", wood, sequence)
+#i = ForgedItem(world, "Sword", wood, sequence)

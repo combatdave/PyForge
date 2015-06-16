@@ -1,6 +1,39 @@
 class EssenceType:
+	Fire = "Fire"
+	Water = "Water"
 	Light = "Light"
 	Shade = "Shade"
+	Mecha = "Mecha"
+	Nature = "Nature"
+
+
+def CreateEssences(owner):
+	essences = {}
+
+	essences[EssenceType.Fire] = Essence_Consumer(EssenceType.Fire, owner)
+	essences[EssenceType.Water] = Essence_Consumer(EssenceType.Water, owner)
+
+	m = essences[EssenceType.Mecha] = Essence_Circular(EssenceType.Mecha, owner)
+	n = essences[EssenceType.Nature] = Essence_Circular(EssenceType.Nature, owner)
+	l = essences[EssenceType.Light] = Essence_Circular(EssenceType.Light, owner)
+	s = essences[EssenceType.Shade] = Essence_Circular(EssenceType.Shade, owner)
+
+	essences[EssenceType.Fire].SetConsumableEssence(essences[EssenceType.Water])
+	essences[EssenceType.Water].SetConsumableEssence(essences[EssenceType.Fire])
+
+	m.SetClockwiseEssence(l)
+	m.SetCounterclockwiseEssence(s)
+
+	l.SetClockwiseEssence(n)
+	l.SetCounterclockwiseEssence(m)
+
+	n.SetClockwiseEssence(s)
+	n.SetCounterclockwiseEssence(l)
+
+	s.SetClockwiseEssence(m)
+	s.SetCounterclockwiseEssence(n)
+
+	return essences
 
 
 class Essence:
@@ -18,12 +51,19 @@ class Essence:
 
 
 	def __repr__(self):
-		return self.essenceType + " essence (" + str(self.level) + ") - contains " + str(self.GetEnergyContained()) + " energy"
+		return self.essenceType + " essence (" + str(self.level) + ")"#" - contains " + str(self.GetEnergyContained()) + " energy"
 
 
 	def EnergyRequiredToLevelUp(self):
 		baseEnergyRequired = self._GetEnergyForLevel(self.level + 1)
-		multiplier = 1.0 + (self.resistance / 20.0)	# 0.5 to 1.5
+
+		resistance = self.item.GetTemporaryResistance(self.essenceType) + self.resistance
+		if resistance >= 10:
+			resistance = 10
+		elif resistance <= -10:
+			resistance = -10
+
+		multiplier = 1.0 + (resistance / 20.0)	# 0.5 to 1.5
 		return baseEnergyRequired * multiplier
 
 
@@ -40,6 +80,7 @@ class Essence:
 
 
 	def TryToLevelUp(self):
+		print self.essenceType, "trying to level from", self.level, "to", self.level+1, "... Needs", self.EnergyRequiredToLevelUp(), "energy."
 		if self.item.energy >= self.EnergyRequiredToLevelUp():
 			self.item.energy -= self.EnergyRequiredToLevelUp()
 			self.level += 1
@@ -54,7 +95,7 @@ class Essence_Consumer(Essence):
 
 
 	def TryToLevelUp(self):
-		#print self.essenceType, "trying to level from", self.level, "to", self.level+1, "... Needs", self.EnergyRequiredToLevelUp(), "energy."
+		print self.essenceType, "trying to level from", self.level, "to", self.level+1, "... Needs", self.EnergyRequiredToLevelUp(), "energy."
 		if self.item.energy >= self.EnergyRequiredToLevelUp():
 			self.item.energy -= self.EnergyRequiredToLevelUp()
 			self.level += 1
@@ -68,3 +109,11 @@ class Essence_Consumer(Essence):
 			return True
 		else:
 			return False
+
+
+class Essence_Circular(Essence):
+	def SetClockwiseEssence(self, essence):
+		self.clockwise = essence
+
+	def SetCounterclockwiseEssence(self, essence):
+		self.counterclockwise = essence
